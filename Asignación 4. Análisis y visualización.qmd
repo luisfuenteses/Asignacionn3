@@ -1,0 +1,493 @@
+---
+title: "Asignación 4. Análisis y visualización de datos en Tidyverse"
+subtitle: ""
+date: last-modified #now #today
+description: "Taller de entrenamiento para la manipulación, la visualización y el analisis de datos biológicos y ambientales utilizando tidyverse de R."
+author: 
+  name: Luis Fuentes-Sáenz, Julian Uribe-Lache y Vanessa Sánchez-Charris
+  url: https://www.unimagdalena.edu.co/
+  afiliation: 
+  afiliation-url:
+title-block-banner: "#99d8c9"
+format:
+  html:
+    toc: true    # Tabla de contenido
+    toc-depth: 6 
+    toc-title: Menú flotante
+    code-tools: false   # Opción para descargar los códigos
+    code-fold: false   # Visualización de los códigos en el reporte
+    css: ["styles2.css"]    # Colores del texto.
+lang: ES-es
+---
+
+------------------------------------------------------------------------
+
+## A. Elementos generales del taller
+
+------------------------------------------------------------------------
+
+## B. **Ajuste y manipulación de los datos**
+
+### Librerías requeridas
+
+```{r, message=FALSE, warning=FALSE}
+library(factoextra)   # Para el PCA
+library(rlang)        # 
+library(ggplot2)      # Figuras de dispersión
+library(ggforce)
+library(concaveman)
+library(ggrepel)
+library(vegan)
+library(tidyverse)
+library(dplyr)
+library(kableExtra)   # Para la edición de tablas
+library(readxl)       # Cargar bases de Excel
+require(stats)        # No se requiere instalar
+library(lattice)      # No se requiere instalar
+library(ggrepel)      # insertar rótulos a los puntos
+require(SciViews)     # Fig. dispersión con coef. de pearson
+library(plotrix)      # Figuras de cajas con múltiples variables
+library(corrplot)     # Figuras de elipses
+library(psych)        # Matrices de correlación para figuras de elipses
+library(reshape)      # Figuras de cajas con múltiples variables
+library(reshape2)     # Figuras de cajas con múltiples variables 
+library(gridExtra)    # Para figuras estadísticas (varios factores)
+library(grid)         # Para figuras estadísticas (varios factores)
+library(forcats)      # Para manipulación de factores
+library(viridis)      # Opciones de paletas de colores
+```
+
+### Cargar la base de datos
+
+```{r}
+datos <- read_xlsx("datos.xlsx", sheet = "Annex 1")
+```
+
+### 1. Crear una columna final que totalice a las densidades de los peces.
+
+```{r}
+datos2 <- datos %>%
+  mutate(
+    Densidad_total = rowSums(
+      select(., 29:81), na.rm = TRUE))
+```
+
+```{r}
+#Seleccionar solo las columanas apropiadas para la visualización
+datos2 <-
+  datos2 %>% 
+  select(samplingID, Location, Basin, Altitude, `Water temperature`, 
+         Conductivity, pH, `Dissolved Oxygen`, Densidad_total)
+
+#Primeras 6 filas de los datos
+head(datos2) %>%
+  kbl %>% 
+  kable_classic(full_width=F)
+```
+
+### 2. Abreviar los nombres de los géneros de peces.
+
+```{r}
+# Primero convertimos de formato largo a ancho la base de datos 
+datos3 <- datos %>%
+  select(3,6,7,11,24, 29:81)
+
+datos_largo <- datos3 %>%
+  pivot_longer(
+    cols = -c(1:3, pH, QHEI),  # Mantiene fijas las primeras tres columnas + pH y QHEI
+    names_to = "Especie",
+    values_to = "Densidades_Peces",
+    values_drop_na = TRUE  # Opcional: elimina NA
+  )
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Generar una nueva columna con valores abreviados de peces
+datos_largo <-
+  datos_largo %>% 
+  mutate(Abrev = abbreviate(Especie, minlength = 4))
+
+datos_largo <- datos_largo %>% 
+  select(Location, Basin, Especie, Abrev, Densidades_Peces, Altitude, pH, QHEI)
+
+#Primeras 6 filas de los datos
+head(datos_largo) %>% 
+  kbl %>% 
+  kable_classic(full_width=F)
+```
+
+### 3. Generar un subgrupo de los 15 géneros más abundantes.
+
+```{r}
+# Seleccionar los 15 géneros más abundantes
+  Abundantes <- datos_largo %>%
+  group_by(Especie, Abrev) %>%  # Agrupar por especie y abreviatura
+  summarise(Densidad_Total = round(
+    sum(Densidades_Peces, 
+        na.rm = TRUE), 2), .groups = "drop") %>%  # Eliminar el agrupamiento
+  arrange(desc(Densidad_Total)) %>%  # Ordenar de mayor a menor
+  slice_head(n = 15)  # Seleccionar los 15 taxones más abundantes
+
+# Visualizar tabla
+Abundantes %>% 
+  kbl() %>% 
+  kable_classic(full_width=F)
+```
+
+### 4. Categorizar a la altura con valores similares a los utilizados en la figura 2 del artículo base
+
+```{r}
+# Aplicar la categorización a tu columna 'altura'
+datos_largo <- datos_largo %>% 
+  mutate(Altitud_level = case_when(
+    Altitude >= 500 & Altitude < 750 ~ "Muy baja",
+    Altitude >= 750  & Altitude < 1000 ~ "Baja",
+    Altitude >= 1000 & Altitude < 1250 ~ "Moderadamente baja", 
+    Altitude >= 1250 & Altitude < 1500 ~ "Media-baja",
+    Altitude >= 1500 & Altitude < 1750 ~ "Media",
+    Altitude >= 1750  & Altitude < 2000 ~ "Media-alta",
+    Altitude >= 2000  & Altitude < 2250 ~ "Alta",
+    Altitude >= 2250  ~ "Muy alta"
+  ))
+
+datos_largo <- datos_largo %>% 
+  select(Location, Basin, Abrev, Densidades_Peces, Altitude, Altitud_level, pH, QHEI)
+
+# Visualizar tabla
+head(datos_largo) %>% 
+  kbl() %>% 
+  kable_classic(full_width=F)
+```
+
+```{r}
+datos_largo2<- datos_largo %>%
+  group_by(Location, Basin, Abrev, Densidades_Peces, Altitude, Altitud_level)  
+```
+
+------------------------------------------------------------------------
+
+## **C. Visualización y análisis de los patrones gráficos**
+
+### Figura 1. Realizar correlaciones entre las variables biológicas
+
+```{r}
+#LUIS
+# Seleccionamos los 15 géneros más abundantes para realizar la correlación
+generos <- datos[, c("Astroblepus", "Bryconamericus", "Chaetostoma", "Brycon", "Creagrutus", "Pimelodella", "Astyanax", "Ceratobranchia", "Characidium", "Pseudochalceus", "Trichomycterus", "Knodus", "Attonitus", "Cetopsorhamdia", "Rhoadsia")]
+
+M <- cor(generos, use = "complete.obs")           # Matriz de Correlación (M)
+
+# Elipses con colores  
+corrplot(M, method = "ellipse", order = "AOE")  # Figura de correlaciones con elipses
+```
+
+### Figura 2. Realizar correlaciones entre las variables ambientales.
+
+```{r}
+# Seleccionamos las variables ambientales que estén más correlacionadas
+ambientales <- datos[, c("Altitude", "Water temperature", "Conductivity", "Dissolved Oxygen", "pH", "Depth mean", "Width mean", "Water velocity", "QHEI", "IHF", "QBR", "soil erosion rate", "cropland extend", "pasture extend", "human footprint index")]
+```
+
+```{r}
+#VANESSA
+M2 <- cor(ambientales, use = "complete.obs")            # Matriz de Correlación (M)
+
+# Elipses con colores 
+corrplot(M2, method = "ellipse", order = "AOE")  # Figura de correlaciones con elipses
+```
+
+### Figura 3. Realizar correlaciones entre las variables biológicas y ambientales.
+
+```{r}
+#LUIS
+Mab <- cor(M, M2, use = "pairwise.complete.obs")  # Pariwise.complete.obs sirve para ignorar los valores faltantes solo en las comparaciones que ocurren
+
+# matriz de elipses
+corrplot(Mab, method = "ellipse")
+```
+
+### Figura 4. Realizar dos figuras bivariadas que muestren las principales relaciones entre variables ambientales y la densidad total de peces.
+
+```{r, message=FALSE, warning=FALSE}
+#LUIS
+datos2 <- datos %>%
+  mutate(
+    Densidad_total = rowSums(
+      select(., 29:81), na.rm = TRUE))
+
+#Figuras de regresión entre la la densidad de peces y Conductividad
+ggplot(datos2, aes(x = Conductivity, y = Densidad_total) )+
+   geom_point(aes(color = Basin), size = 3) +
+  geom_smooth(method= "lm") + 
+  labs(title = "Distribución de la densidad de peces según la conductividad",
+       x = "Conductividad",
+       y = "Densidad total de peces")+
+  scale_y_continuous(
+    limits = c(0, 100),       # Establece el rango del eje Y (ejemplo: de 0 a 100)
+    breaks = seq(0, 100, 20),  # Establece los puntos de quiebre (ejemplo: de 0 a 100 en pasos de 20)
+    labels = seq(0, 100, 20)   # Etiquetas para los puntos de quiebre (opcional, puede ser personalizado)
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank()
+  )
+```
+
+```{r, message=FALSE, warning=FALSE}
+#VANESSA
+#Figuras de regresión entre la la densidad de peces y pH
+ggplot(datos2, aes(x = pH, y = Densidad_total) )+
+   geom_point(aes(color = Basin), size = 3) +
+  geom_smooth(method= "lm") + 
+  labs(title = "Distribución de la densidad de peces según el pH",
+       x = "pH",
+       y = "Densidad total de peces")+
+  scale_y_continuous(
+    limits = c(0, 100),       # Establece el rango del eje Y (ejemplo: de 0 a 100)
+    breaks = seq(0, 100, 20),  # Establece los puntos de quiebre (ejemplo: de 0 a 100 en pasos de 20)
+    labels = seq(0, 100, 20)   # Etiquetas para los puntos de quiebre (opcional, puede ser personalizado)
+  ) +
+  theme_bw() +
+  theme(panel.grid = element_blank()
+  )
+```
+
+### Figuras 5 y 6. Realizar dos figuras trivariadas (cotplot) que muestren las principales relaciones entre variables ambientales y la densidad total de peces, una incluyendo a las cuencas y otra a los rangos de altura.
+
+```{r, message=FALSE, warning=FALSE}
+#JULIAN
+# Figura de relaión entre pH y la densidad de peces por cuencas
+ggplot(datos_largo2, aes(x = pH, y = Densidades_Peces, color = Basin)) +
+  geom_point(alpha = 0.6, size = 1) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1) +  # Tendencia por cuenca
+  facet_wrap(~ Basin, scales = "fixed") +  # Separar por cuenca
+  scale_y_continuous(
+    limits = c(0, 60),       # Límites fijos
+    breaks = seq(0, 60, 10)  # Marcas cada 10 unidades
+  ) +
+  labs(
+    x = "pH",
+    y = "Densidad Total de Peces",
+    title = "Relación entre pH y Densidad por Cuenca"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")  # Ocultar leyenda redundante
+```
+
+```{r, message=FALSE, warning=FALSE}
+#JULIAN
+# Figura de relaión entre pH y la densidad de peces por altura
+ggplot(datos_largo, aes(x = pH, y = Densidades_Peces, color = Altitud_level)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1) +  # Tendencia por cuenca
+  facet_wrap(~ Altitud_level, scales = "free_x") +  # Separar por cuenca
+  labs(
+    x = "Rangos de altura",
+    y = "Densidad Total de Peces",
+    title = "Relación pH-Densidad por Rango de Altitud"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")  # Ocultar leyenda redundante
+```
+
+### Figura 7. Visualizar diferencias entre las densidades totales de los peces y las diferentes cuencas.
+
+```{r, message=FALSE, warning=FALSE}
+#JULIAN
+datos_largo2 <- datos_largo2 %>% 
+  filter(Densidades_Peces > 10) 
+
+ggplot(datos_largo2, aes(x = Abrev, y = Densidades_Peces, fill = Basin)) + 
+  geom_boxplot() +
+  labs(
+    x = "Especies", fill = "Ríos",
+    y = "Densidad") +
+  scale_fill_viridis_d() +
+   scale_y_continuous(
+    limits = c(0, 80),       # Límites fijos
+    breaks = seq(0, 80, 10)  # Marcas cada 10 unidades
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+### Figura 8. Visualizar diferencias entre las densidades totales de los peces y las categorías de alturas referenciadas en el artículo.
+
+```{r, message=FALSE, warning=FALSE}
+#VANESSA
+ggplot(datos_largo2, aes(x = Abrev, y = Densidades_Peces, fill = Altitud_level)) + 
+  geom_boxplot() +
+  labs(
+    x = "Especies", fill = "Altitud",
+    y = "Densidades de peces") +
+  scale_fill_viridis_d() +
+   scale_y_continuous(
+    limits = c(0, 80),       # Límites fijos
+    breaks = seq(0, 80, 10)  # Marcas cada 10 unidades
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+### Figura 9. Visualizar diferencias entre las densidades totales de los peces, con las cuencas y los rangos de altura.
+
+```{r}
+# Resumen estadístico (promedios y error estándar)
+datos_grafico <- datos_largo %>%
+  group_by(Basin, Altitud_level) %>%  
+  summarise(
+    Media = mean(Densidades_Peces, na.rm = TRUE),         # Promedios
+    SE = sd(Densidades_Peces, na.rm = TRUE) / sqrt(n()),  # Error estándar
+    .groups = 'drop'
+  )
+```
+
+```{r}
+#LUIS
+ggplot(datos_grafico, aes(x = Basin, y = Media, fill = Altitud_level)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, color = "black") +
+  geom_errorbar(
+    aes(ymin = Media - SE, ymax = Media + SE),
+    width = 0.2,
+    position = position_dodge(width = 0.8),
+    color = "black"
+  ) +
+  labs(
+    x = "Cuenca",
+    y = "Densidad de peces",
+    fill = "Rango de Altitud"
+  ) +
+  scale_fill_brewer(palette = "YlOrRd") +  # Paleta de colores
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+```
+
+### Figura 10. Figura estadística que visualice promedios y errores estándar de la densidad total de peces entre cuencas y gradientes de altura.
+
+```{r}
+#LUIS
+# Crear gráfico
+ggplot(datos_grafico, aes(x = Basin, y = Media, fill = Altitud_level)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, color = "black", linewidth = 0.3) +  
+  geom_errorbar(
+    aes(ymin = Media - SE, 
+        ymax = Media + SE),
+    width = 0.2,
+    position = position_dodge(width = 0.8),
+    color = "black",
+    linewidth = 0.5  
+  ) +
+  labs(
+    x = "Cuenca",
+    y = "Densidad de peces"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +   
+  theme_minimal(base_size = 12) +  
+  theme(
+    legend.position = "top",
+    legend.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    axis.title = element_text(face = "bold"),
+    panel.grid.major.x = element_blank(),  
+    panel.grid.minor.y = element_blank(),  
+    plot.caption = element_text(hjust = 0, face = "italic")  
+  ) +
+  guides(fill = guide_legend(nrow = 1)) 
+```
+
+### Figura 11. Realizar la figura de burbujas similares a la figura 2 del artículo base y al taller visto en clase.
+
+```{r}
+#VANESSA
+datos_largo2 <- datos_largo %>% 
+filter(Densidades_Peces > 5) 
+
+# Calcular densidad total por especie para el ordenamiento
+datos_orden <- datos_largo2 %>%
+  group_by(Abrev) %>%
+  summarise(Densidad_Max = max(Densidades_Peces, na.rm = TRUE)) %>%
+  arrange(desc(Densidad_Max)) %>%
+  pull(Abrev)
+
+# Convertir 'Abrev' a factor ordenado por densidad total
+datos_largo2$Abrev <- factor(datos_largo2$Abrev, 
+                            levels = datos_orden)
+
+# Crear el gráfico de burbujas
+ggplot(datos_largo2, aes(x = Altitude, y = reorder(Abrev, -Densidades_Peces), 
+                         size = Densidades_Peces, color = Basin)) +
+  geom_point(alpha = 0.5) +  
+  scale_size(range = c(1, 8), breaks = seq(10, 100, by = 20)) +  # Cambia los valores en la leyenda de tamaños
+  scale_x_continuous(
+    limits = c(500, 2750), 
+    breaks = seq(500, 2750, by = 250)
+  ) + 
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 12),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_blank()
+  ) +
+  geom_vline(xintercept = seq(500, 2750, by = 250), color = "gray", linetype = "dashed") +
+  guides(
+    size = guide_legend(
+      title = NULL,
+      override.aes = list(color = "#377eb8", shape = 1, stroke = 1.2)
+    ),
+    color = guide_legend(title = NULL)
+  ) 
+```
+
+### Figura 12. Realizar la figura de burbujas reemplazando a los rangos de altura con las cuencas.
+
+```{r, message=FALSE, warning=FALSE}
+#JULIAN
+# Filtrar datos (opcional, según tu necesidad)
+datos_largo2 <- datos_largo2 %>% 
+  filter(Densidades_Peces > 5)
+
+# Crear el gráfico de burbujas con cuencas en el eje X
+ggplot(datos_largo2, aes(x = Basin, y = Abrev, size = Densidades_Peces, color = Altitud_level)) +  # Cambiado: x = Basin, color = Altitude
+  geom_point(alpha = 0.5) +  
+  scale_size(range = c(1, 8), name = "Densidad") + 
+ scale_color_viridis_d(  # Escala discreta de viridis
+    option = "plasma",   # Opciones: "magma", "inferno", "plasma", "viridis", etc.
+    name = "Altitud"     # Título de la leyenda
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1),  # Texto en ángulo para cuencas
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_blank(),
+    legend.position = "right"
+  ) +
+  # Líneas verticales grises (ahora entre cuencas)
+  geom_vline(xintercept = seq(1.5, length(unique(datos_largo2$Basin))-0.5, by = 1), 
+             color = "gray", linetype = "dashed") +
+  # Ajustar leyendas
+  guides(
+    size = guide_legend(
+      order = 1,  # Orden de las leyendas
+      override.aes = list(shape = 1, stroke = 1.2)
+    ),
+    color = guide_colorbar(
+      title.position = "top",
+      title.hjust = 0.5,
+      order = 2
+    )
+  ) +
+  labs(x = "Cuenca", y = NULL)  # Etiquetas de ejes
+    color = guide_legend(title = NULL)  # Quitar título de la leyenda de colores
+```
